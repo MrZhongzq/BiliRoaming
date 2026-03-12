@@ -451,13 +451,69 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
             try {
                 System.loadLibrary("biliroaming")
             } catch (e: Throwable) {
-                Log.e(e)
-                Log.toast("不支持该架构或框架，部分功能可能失效")
-                return@hookInfo
+                // NPatch/LSPosed may fail to find native lib via System.loadLibrary
+                // Extract .so from module APK and load it
+                try {
+                    val modulePath = me.iacn.biliroaming.XposedInit.modulePath
+                    val abi = if (android.os.Process.is64Bit()) "arm64-v8a" else "armeabi-v7a"
+                    val soName = "lib/$abi/libbiliroaming.so"
+                    Log.d("System.loadLibrary failed, extracting from: $modulePath!/$soName")
+                    val cacheDir = File(context.cacheDir, "biliroaming_native")
+                    cacheDir.mkdirs()
+                    val soFile = File(cacheDir, "libbiliroaming.so")
+                    if (!soFile.exists() || soFile.lastModified() < File(modulePath).lastModified()) {
+                        java.util.zip.ZipFile(modulePath).use { zip ->
+                            val entry = zip.getEntry(soName) ?: throw Exception("$soName not found in APK")
+                            zip.getInputStream(entry).use { input ->
+                                soFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                        }
+                    }
+                    System.load(soFile.absolutePath)
+                    Log.d("Native library loaded from extracted: ${soFile.absolutePath}")
+                } catch (e2: Throwable) {
+                    Log.e(e)
+                    Log.e(e2)
+                    Log.toast("不支持该架构或框架，部分功能可能失效")
+                    return@hookInfo
+                }
             }
 
-            val dexHelper =
-                DexHelper(classloader.findDexClassLoader(::findRealClassloader) ?: return@hookInfo)
+            var realCl = classloader.findDexClassLoader(::findRealClassloader) ?: return@hookInfo
+            var dexHelper = DexHelper(realCl)
+            // Detect NPatch/LSPatch repacked APK: if DexHelper can't find anything,
+            // try using the original APK path instead
+            val testResult = dexHelper.findMethodUsingString("toJSON error", false, -1, -1, null, -1, null, null, null, true)
+            if (testResult.isEmpty()) {
+                Log.d("DexHelper found 0 results, trying original APK path...")
+                dexHelper.close()
+                // Try to find the original APK from PackageManager (before NPatch modifies sourceDir in-process)
+                val pkgInfo = context.packageManager.getPackageInfo(
+                    AndroidAppHelper.currentPackageName(), 0
+                )
+                val originalApk = pkgInfo.applicationInfo?.sourceDir
+                    ?: context.applicationInfo.sourceDir
+                // Also try extracting real path from native library directories
+                val pathList = realCl.getObjectField("pathList")
+                val nativeLibDirs = pathList?.getObjectFieldOrNull("nativeLibraryDirectories")
+                    ?.toString().orEmpty()
+                val dataAppPath = Regex("""/data/app/[^,\]]+/base\.apk""").find(nativeLibDirs)?.value
+                val apkToTry = dataAppPath ?: originalApk ?: return@hookInfo
+                Log.d("Trying DexHelper with APK: $apkToTry")
+                val fallbackCl = dalvik.system.PathClassLoader(apkToTry, ClassLoader.getSystemClassLoader())
+                dexHelper = DexHelper(fallbackCl)
+                val retryResult = dexHelper.findMethodUsingString("toJSON error", false, -1, -1, null, -1, null, null, null, true)
+                Log.d("DexHelper retry: ${retryResult.size} results")
+                if (retryResult.isEmpty() && dataAppPath != null && dataAppPath != originalApk) {
+                    // Try the other path
+                    Log.d("Still 0, trying PackageManager path: $originalApk")
+                    dexHelper.close()
+                    val fallbackCl2 = dalvik.system.PathClassLoader(originalApk!!, ClassLoader.getSystemClassLoader())
+                    dexHelper = DexHelper(fallbackCl2)
+                    val retryResult2 = dexHelper.findMethodUsingString("toJSON error", false, -1, -1, null, -1, null, null, null, true)
+                    Log.d("DexHelper retry2: ${retryResult2.size} results")
+                }
+            }
             lastUpdateTime = max(
                 context.packageManager.getPackageInfo(
                     AndroidAppHelper.currentPackageName(),
@@ -993,22 +1049,6 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                     .forEach { homeUserCenterClass ->
                         val homeUserCenterIndex = dexHelper.encodeClassIndex(homeUserCenterClass)
                         val addSettingMethod = dexHelper.findMethodUsingString(
-                            "bilibili://main/scan",
-                            true,
-                            -1,
-                            -1,
-                            null,
-                            homeUserCenterIndex,
-                            null,
-                            longArrayOf(contextIndex),
-                            null,
-                            false
-                        ).asSequence().mapNotNull {
-                            dexHelper.decodeMethodIndex(it) as? Method
-                        }.firstOrNull {
-                            it.parameterTypes.size == 2 &&
-                                    it.parameterTypes[1] != List::class.java
-                        } ?: dexHelper.findMethodUsingString(
                             "activity://main/preference",
                             true,
                             -1,
@@ -1637,12 +1677,30 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                     comment3ViewIndex = it.parameterCount - 1
                 }
             }
-            dexHelper.findMethodUsingString(
+            (dexHelper.findMethodUsingString(
                 "BangumiAllButton",
                 true, -1, 0, null, -1, null, null, null, true
             ).firstOrNull()?.let {
                 dexHelper.decodeMethodIndex(it)
-            }?.declaringClass?.declaringClass?.let {
+            }?.declaringClass?.declaringClass ?: run {
+                // v8.85.0+: "BangumiAllButton" removed, try finding via ActivityEntrance toString
+                dexHelper.findMethodUsingString(
+                    "ActivityEntrance(cover=",
+                    true, -1, 0, null, -1, null, null, null, true
+                ).asSequence().mapNotNull {
+                    dexHelper.decodeMethodIndex(it)?.declaringClass
+                }.firstOrNull {
+                    it.declaredMethods.any { m ->
+                        m.parameterTypes.isEmpty() && m.genericReturnType.toString()
+                            .contains("ActivityEntrance")
+                    }
+                } ?: dexHelper.findMethodUsingString(
+                    "hasBangumiSeason",
+                    false, -1, -1, null, -1, null, null, null, true
+                ).asSequence().firstNotNullOfOrNull {
+                    dexHelper.decodeMethodIndex(it)?.declaringClass
+                }
+            })?.let {
                 bangumiSeason = class_ { name = it.name }
                 bangumiSeasonActivityEntrance = method {
                     name = it.declaredMethods.firstOrNull {
@@ -1876,7 +1934,18 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                 check = method { name = checkMethod.name }
             }
             playerPreloadHolder = playerPreloadHolder {
-                dexHelper.findMethodUsingString(
+                (dexHelper.findMethodUsingString(
+                    "missing preloadKey!",
+                    false,
+                    -1,
+                    -1,
+                    null,
+                    -1,
+                    null,
+                    null,
+                    null,
+                    true
+                ).firstOrNull() ?: dexHelper.findMethodUsingString(
                     "preloadKey is null",
                     false,
                     -1,
@@ -1887,7 +1956,7 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                     null,
                     null,
                     true
-                ).firstOrNull()?.run {
+                ).firstOrNull())?.run {
                     val stringClassIndex = dexHelper.encodeClassIndex(String::class.java)
                     dexHelper.findMethodInvoking(
                         this,
@@ -1929,7 +1998,18 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                     get = method { name = it.name }
                 }
             }
-            dexHelper.findMethodUsingString(
+            (dexHelper.findMethodUsingString(
+                "enable_player_force_login_qn",
+                false,
+                -1,
+                -1,
+                null,
+                -1,
+                null,
+                null,
+                null,
+                false
+            ).let { if (it.isNotEmpty()) it else dexHelper.findMethodUsingString(
                 "player.unite_login_qn",
                 false,
                 -1,
@@ -1940,7 +2020,7 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                 null,
                 null,
                 false
-            ).asSequence().mapNotNull {
+            ) }).asSequence().mapNotNull {
                 dexHelper.decodeMethodIndex(it)?.let { m ->
                     playerQualityService {
                         class_ = class_ { name = m.declaringClass.name }
@@ -1966,7 +2046,20 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                 class_ = class_ { name = getDefaultQnMethod.declaringClass.name }
                 getDefaultQn = method { name = getDefaultQnMethod.name }
             }
-            val autoSupremumQualityClass = dexHelper.findMethodUsingString(
+            val autoSupremumQualityClass = (dexHelper.findMethodUsingString(
+                "KAutoQnCtl(loginHalf=",
+                false,
+                -1,
+                -1,
+                null,
+                -1,
+                null,
+                null,
+                null,
+                true
+            ).asSequence().firstNotNullOfOrNull {
+                dexHelper.decodeMethodIndex(it)
+            }?.declaringClass ?: dexHelper.findMethodUsingString(
                 "AutoSupremumQuality(loginHalfScreen=",
                 false,
                 -1,
@@ -1979,7 +2072,7 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                 true
             ).asSequence().firstNotNullOfOrNull {
                 dexHelper.decodeMethodIndex(it)
-            }?.declaringClass?.also {
+            }?.declaringClass)?.also {
                 autoSupremumQuality = autoSupremumQuality {
                     class_ = class_ {
                         name = it.name
@@ -1987,7 +2080,20 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                 }
             }
             qualityStrategyProvider = qualityStrategyProvider {
-                val buildStrategyMethod = dexHelper.findMethodUsingString(
+                val buildStrategyMethod = (dexHelper.findMethodUsingString(
+                    "Quality Strategy range:",
+                    false,
+                    -1,
+                    -1,
+                    null,
+                    -1,
+                    null,
+                    null,
+                    null,
+                    true
+                ).asSequence().firstNotNullOfOrNull {
+                    dexHelper.decodeMethodIndex(it)
+                } ?: dexHelper.findMethodUsingString(
                     "Quality Strategy share:",
                     false,
                     -1,
@@ -2000,7 +2106,7 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
                     true
                 ).asSequence().firstNotNullOfOrNull {
                     dexHelper.decodeMethodIndex(it)
-                } ?: return@qualityStrategyProvider
+                }) ?: return@qualityStrategyProvider
                 val providerClass = buildStrategyMethod.declaringClass
                 val selectQualityMethod = providerClass.declaredMethods.asSequence().filter {
                     it.parameterCount == 3 && it.parameterTypes.contentEquals(
@@ -2391,7 +2497,8 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
             }
             rewardAd = rewardAd {
                 val rewardAdActivityClass =
-                    "com.bilibili.ad.reward.RewardAdActivity".from(classloader) ?: return@rewardAd
+                    ("com.bilibili.ad.reward.activity.RewardAdActivity".from(classloader)
+                        ?: "com.bilibili.ad.reward.RewardAdActivity".from(classloader)) ?: return@rewardAd
 
                 class_ = class_ { name = rewardAdActivityClass.name }
                 val rewardFlagField =

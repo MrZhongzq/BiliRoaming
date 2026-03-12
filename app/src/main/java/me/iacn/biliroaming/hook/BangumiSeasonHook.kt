@@ -217,15 +217,19 @@ class BangumiSeasonHook(classLoader: ClassLoader) : BaseHook(classLoader) {
             }
         }
 
-        "com.bilibili.bangumi.ui.page.detail.BangumiDetailActivityV3".hookAfterMethod(
-            mClassLoader, "onCreate", Bundle::class.java
-        ) {
-            setErrorMessage(it.thisObject as Activity)
+        runCatchingOrNull {
+            "com.bilibili.bangumi.ui.page.detail.BangumiDetailActivityV3".hookAfterMethod(
+                mClassLoader, "onCreate", Bundle::class.java
+            ) {
+                setErrorMessage(it.thisObject as Activity)
+            }
         }
-        "com.bilibili.bangumi.ui.page.detail.BangumiDetailActivityV3".hookAfterMethod(
-            mClassLoader, "onConfigurationChanged", Configuration::class.java
-        ) {
-            setErrorMessage(it.thisObject as Activity)
+        runCatchingOrNull {
+            "com.bilibili.bangumi.ui.page.detail.BangumiDetailActivityV3".hookAfterMethod(
+                mClassLoader, "onConfigurationChanged", Configuration::class.java
+            ) {
+                setErrorMessage(it.thisObject as Activity)
+            }
         }
 
         if (isBuiltIn && is64 && Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {

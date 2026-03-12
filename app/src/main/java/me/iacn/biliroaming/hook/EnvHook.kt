@@ -24,10 +24,9 @@ class EnvHook(classLoader: ClassLoader) : BaseHook(classLoader) {
                         ?.let { result[config.key] = it } ?: result.remove(config.key)
                 }
             }
-            // v8.28.0 - ?
-            it.hookAfterMethod(instance.getPreBuiltConfigMethod(), hooker = hooker)
-            // ? - v8.48.0 ..
-            it.hookAfterMethod(instance.getPreBuiltConfigMethod(), it, hooker = hooker)
+            // Try parameterized version first (v8.48.0+), then no-arg version
+            runCatchingOrNull { it.hookAfterMethod(instance.getPreBuiltConfigMethod(), it, hooker = hooker) }
+            runCatchingOrNull { it.hookAfterMethod(instance.getPreBuiltConfigMethod(), hooker = hooker) }
         }
 
         // TypedContext
@@ -46,10 +45,9 @@ class EnvHook(classLoader: ClassLoader) : BaseHook(classLoader) {
                         ?: result.edit().remove(config.key).apply()
                 }
             }
-            // v8.28.0 - ?
-            it.hookAfterMethod(instance.getDataSPMethod(), hooker = hooker)
-            // ? - v8.48.0 ..
-            it.hookAfterMethod(instance.getDataSPMethod(), it, hooker = hooker)
+            // Try parameterized version first (v8.48.0+), then no-arg version
+            runCatchingOrNull { it.hookAfterMethod(instance.getDataSPMethod(), it, hooker = hooker) }
+            runCatchingOrNull { it.hookAfterMethod(instance.getDataSPMethod(), hooker = hooker) }
         }
 
         "com.bilibili.lib.blconfig.internal.OverrideConfig".findClassOrNull(mClassLoader)

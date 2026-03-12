@@ -23,16 +23,30 @@ class VideoQualityHook(classLoader: ClassLoader) : BaseHook(classLoader) {
             instance.autoSupremumQualityClass?.hookBeforeConstructor(
                 *Array(6) { Int::class.javaPrimitiveType }
             ) { param ->
+                // v8.85.0+: AutoQnCtl field order: loginHalf, loginFull, nologinHalf, nologinFull, mobileLoginFull, mobileNologinFull
+                // Legacy: AutoSupremumQuality: loginHalf, loginFull, loginMobileFull, unloginHalf, unloginFull, unloginMobileFull
+                // Detect by class name to determine field order
+                val isNewLayout = param.thisObject.javaClass.name.contains("AutoQnCtl")
+                        || param.thisObject.javaClass.simpleName.contains("KAutoQnCtl")
                 if (halfScreenQuality != 0) {
                     param.args[0] = halfScreenQuality       // loginHalf
-
-                    param.args[3] = halfScreenQuality       // unloginHalf
-                    param.args[4] = halfScreenQuality       // unloginFull
-                    param.args[5] = halfScreenQuality       // unloginMobileFull
+                    if (isNewLayout) {
+                        param.args[2] = halfScreenQuality   // nologinHalf
+                        param.args[3] = halfScreenQuality   // nologinFull
+                        param.args[5] = halfScreenQuality   // mobileNologinFull
+                    } else {
+                        param.args[3] = halfScreenQuality   // unloginHalf
+                        param.args[4] = halfScreenQuality   // unloginFull
+                        param.args[5] = halfScreenQuality   // unloginMobileFull
+                    }
                 }
                 if (fullScreenQuality != 0) {
                     param.args[1] = fullScreenQuality       // loginFull
-                    param.args[2] = fullScreenQuality       // loginMobileFull
+                    if (isNewLayout) {
+                        param.args[4] = fullScreenQuality   // mobileLoginFull
+                    } else {
+                        param.args[2] = fullScreenQuality   // loginMobileFull
+                    }
                 }
             }
             instance.qualityStrategyProviderClass?.hookBeforeMethod(

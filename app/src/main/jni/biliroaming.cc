@@ -177,6 +177,47 @@ struct [[gnu::packed]] ZipLocalFile {
   [[maybe_unused]] char name[0];
 };
 
+struct [[gnu::packed]] ZipCentralDir {
+  uint32_t signature;
+  uint16_t version_made;
+  uint16_t version_needed;
+  uint16_t flags;
+  uint16_t compress;
+  uint16_t last_modify_time;
+  uint16_t last_modify_date;
+  uint32_t crc;
+  uint32_t compress_size;
+  uint32_t uncompress_size;
+  uint16_t file_name_length;
+  uint16_t extra_length;
+  uint16_t comment_length;
+  uint16_t disk_start;
+  uint16_t internal_attr;
+  uint32_t external_attr;
+  uint32_t local_header_offset;
+  char name[0];
+
+  std::string_view file_name() { return {name, file_name_length}; }
+  ZipCentralDir *next() {
+    auto *n = reinterpret_cast<ZipCentralDir *>(
+        reinterpret_cast<uint8_t *>(this) + sizeof(ZipCentralDir) +
+        file_name_length + extra_length + comment_length);
+    if (n->signature == 0x02014b50u) return n;
+    return nullptr;
+  }
+};
+
+struct [[gnu::packed]] ZipEndOfCentralDir {
+  uint32_t signature;
+  uint16_t disk_number;
+  uint16_t cd_disk_number;
+  uint16_t cd_entries_on_disk;
+  uint16_t cd_entries_total;
+  uint32_t cd_size;
+  uint32_t cd_offset;
+  uint16_t comment_length;
+};
+
 class ZipFile {
 public:
   static std::unique_ptr<ZipFile> Open(const MemMap &map) {
@@ -184,9 +225,51 @@ public:
     if (!local_file)
       return nullptr;
     auto r = std::make_unique<ZipFile>();
-    while (local_file) {
-      r->entries.emplace(local_file->file_name(), local_file);
-      local_file = local_file->next();
+
+    // Try to find Central Directory for accurate sizes (handles data descriptor flag)
+    ZipEndOfCentralDir *eocd = nullptr;
+    // Search backwards for EOCD signature (0x06054b50)
+    for (auto *p = map.addr() + map.len() - sizeof(ZipEndOfCentralDir);
+         p >= map.addr() && p >= map.addr() + map.len() - 65535 - sizeof(ZipEndOfCentralDir);
+         --p) {
+      if (*reinterpret_cast<const uint32_t *>(p) == 0x06054b50u) {
+        eocd = reinterpret_cast<ZipEndOfCentralDir *>(p);
+        break;
+      }
+    }
+
+    // Build size map from central directory
+    std::map<std::string_view, std::pair<uint32_t, uint32_t>> cd_sizes;
+    if (eocd && eocd->cd_offset < map.len()) {
+      auto *cd = reinterpret_cast<ZipCentralDir *>(map.addr() + eocd->cd_offset);
+      while (cd && cd->signature == 0x02014b50u) {
+        auto fn = cd->file_name();
+        cd_sizes[fn] = {cd->compress_size, cd->uncompress_size};
+        cd = cd->next();
+      }
+    }
+
+    if (eocd && eocd->cd_offset < map.len()) {
+      // Use central directory to locate entries (handles data descriptors correctly)
+      auto *cd = reinterpret_cast<ZipCentralDir *>(map.addr() + eocd->cd_offset);
+      while (cd && cd->signature == 0x02014b50u) {
+        if (cd->local_header_offset < map.len()) {
+          auto *lf = ZipLocalFile::from(map.addr() + cd->local_header_offset);
+          if (lf) {
+            // Patch sizes from central directory
+            lf->compress_size = cd->compress_size;
+            lf->uncompress_size = cd->uncompress_size;
+            r->entries.emplace(lf->file_name(), lf);
+          }
+        }
+        cd = cd->next();
+      }
+    } else {
+      // Fallback: traverse local file headers (works only without data descriptors)
+      while (local_file) {
+        r->entries.emplace(local_file->file_name(), local_file);
+        local_file = local_file->next();
+      }
     }
     return r;
   }
