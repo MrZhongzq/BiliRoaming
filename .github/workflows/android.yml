@@ -51,15 +51,24 @@ jobs:
           echo 'kotlin.daemon.jvmargs=-Xmx4096m' >> gradle.properties
           echo 'android.native.buildOutput=verbose' >> gradle.properties
           ./gradlew -PappVerName=${{ env.VERSION }} assembleRelease assembleDebug
-      - name: Upload built apk
+      - name: Upload release apk
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: snapshot
-          path: |
-              app/build/outputs/apk
-              app/build/outputs/mapping
-              app/release
+          name: BiliRoaming_${{ env.VERSION }}_release
+          path: app/release/BiliRoaming_${{ env.VERSION }}.apk
+      - name: Upload debug apk
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BiliRoaming_${{ env.VERSION }}_debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload mapping
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mapping
+          path: app/build/outputs/mapping
       - name: Post to channel
         if: github.ref == 'refs/heads/master'
         env:
