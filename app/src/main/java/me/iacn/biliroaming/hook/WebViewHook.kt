@@ -40,6 +40,63 @@ class WebViewHook(classLoader: ClassLoader) : BaseHook(classLoader) {
 
     override fun startHook() {
         Log.d("startHook: WebView")
+        val hooked = try {
+            hookBiliWebView()
+        } catch (_: Throwable) {
+            false
+        }
+        if (!hooked) {
+            hookSystemWebView()
+        }
+    }
+
+    private fun hookBiliWebView(): Boolean {
+        val biliWebViewClass = "com.bilibili.app.comm.bh.BiliWebView".findClassOrNull(mClassLoader)
+            ?: return false
+        val biliWebViewClientClass = "com.bilibili.app.comm.bh.BiliWebViewClient".findClassOrNull(mClassLoader)
+            ?: return false
+        biliWebViewClass.hookBeforeMethod(
+            "setWebViewClient", biliWebViewClientClass
+        ) { param ->
+            val clazz = param.args[0].javaClass
+            param.thisObject.callMethod("addJavascriptInterface", jsHooker, "hooker")
+            if (hookedClient.contains(clazz)) return@hookBeforeMethod
+            try {
+                clazz.getDeclaredMethod(
+                    "onPageStarted",
+                    biliWebViewClass, String::class.java, Bitmap::class.java
+                ).hookBeforeMethod { p ->
+                    val url = p.args[1] as? String ?: return@hookBeforeMethod
+                    if (url.contains("note-app")) {
+                        val webView = p.args[0] as WebView
+                        webView.evaluateJavascript("""(function(){$js})()""".trimMargin(), null)
+                    }
+                }
+                if (sPrefs.getBoolean("save_comment_image", false)) {
+                    clazz.getDeclaredMethod(
+                        "onPageFinished",
+                        biliWebViewClass, String::class.java
+                    ).hookBeforeMethod { p ->
+                        val webView = p.args[0] as WebView
+                        val url = p.args[1] as String
+                        if (url.startsWith("https://www.bilibili.com/h5/note-app/view")) {
+                            webView.evaluateJavascript(
+                                """(function(){for(var i=0;i<document.images.length;++i){if(document.images[i].className==='img-preview'){document.images[i].addEventListener("contextmenu",(e)=>{hooker.saveImage(e.target.currentSrc);})}}})()""",
+                                null
+                            )
+                        }
+                    }
+                }
+                hookedClient.add(clazz)
+                Log.d("hook webview $clazz")
+            } catch (_: NoSuchMethodException) {
+            }
+        }
+        Log.d("hooked BiliWebView")
+        return true
+    }
+
+    private fun hookSystemWebView() {
         WebView::class.java.hookBeforeMethod(
             "setWebViewClient", WebViewClient::class.java
         ) { param ->
@@ -51,8 +108,11 @@ class WebViewHook(classLoader: ClassLoader) : BaseHook(classLoader) {
                     "onPageStarted",
                     WebView::class.java, String::class.java, Bitmap::class.java
                 ).hookBeforeMethod { p ->
-                    val webView = p.args[0] as WebView
-                    webView.evaluateJavascript("""(function(){$js})()""".trimMargin(), null)
+                    val url = p.args[1] as? String ?: return@hookBeforeMethod
+                    if (url.contains("note-app")) {
+                        val webView = p.args[0] as WebView
+                        webView.evaluateJavascript("""(function(){$js})()""".trimMargin(), null)
+                    }
                 }
                 if (sPrefs.getBoolean("save_comment_image", false)) {
                     clazz.getDeclaredMethod(
@@ -74,6 +134,7 @@ class WebViewHook(classLoader: ClassLoader) : BaseHook(classLoader) {
             } catch (_: NoSuchMethodException) {
             }
         }
+        Log.d("hooked system WebView (fallback)")
     }
 
     @Suppress("UNUSED_PARAMETER")

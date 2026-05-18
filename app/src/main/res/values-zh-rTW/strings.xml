@@ -42,10 +42,6 @@
     <string name="custom_upos_summary">自訂番劇的 UPOS 伺服器，可以解決黑畫面與無限載入</string>
     <string name="purify_splash_title">淨化啟動頁面</string>
     <string name="purify_splash_summary">去除啟動程式時的推廣</string>
-    <string name="custom_splash_title">取代啟動圖</string>
-    <string name="custom_splash_summary">取代啟動圖為自訂圖片（僅支援6.6.0及以上版本，不選擇圖片則隱藏）</string>
-    <string name="custom_splash_logo_title">取代啟動Logo</string>
-    <string name="custom_splash_logo_summary">取代啟動Logo為自訂圖片（僅支援6.6.0及以上版本，不選擇圖片則隱藏，延遲生效）</string>
     <string name="beautify_category">美化</string>
     <string name="auto_like_title">自動按讚影片</string>
     <string name="auto_like_summary">進入影片詳情頁時自動按讚</string>
@@ -75,8 +71,6 @@
     <string name="custom_server_summary">使用設定的伺服器解析區域限制番劇的播放地址；如不知如何設定，請查看說明文件</string>
     <string name="drawer_title">移動我的頁面到側邊欄</string>
     <string name="drawer_summary">移動後，可以點擊首頁的大頭貼或者在空白地方左劃打開側邊欄\n關閉時，需要重啟兩次用戶端才能還原。如果無法還原，請重啟手機。</string>
-    <string name="full_splash_title">強制全螢幕啟動圖</string>
-    <string name="full_splash_summary">去兩頭留中間形式全螢幕，無論是否自訂啟動圖</string>
     <!--    <string name="get_cover_title">長按儲存封面</string>-->
     <!--    <string name="get_cover_summary">開啟後，長按播放器可儲存影片、直播間、番劇封面</string>-->
     <string name="purify_city_title">移除同城標籤</string>

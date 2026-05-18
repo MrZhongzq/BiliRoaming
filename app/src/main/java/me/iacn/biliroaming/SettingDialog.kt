@@ -13,14 +13,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.Resources
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.preference.*
-import android.provider.MediaStore
 import android.text.Editable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
@@ -40,12 +38,9 @@ import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.*
 import me.iacn.biliroaming.BiliBiliPackage.Companion.instance
 import me.iacn.biliroaming.hook.JsonHook
-import me.iacn.biliroaming.hook.SplashHook
 import me.iacn.biliroaming.utils.*
 import me.iacn.biliroaming.utils.UposReplaceHelper.isLocatedCn
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
 import java.net.URL
 import kotlin.system.exitProcess
 
@@ -86,8 +81,6 @@ class SettingDialog(context: Context) : AlertDialog.Builder(context) {
             }
             findPreference("version")?.summary = BuildConfig.VERSION_NAME
             findPreference("version")?.onPreferenceClickListener = this
-            findPreference("custom_splash")?.onPreferenceChangeListener = this
-            findPreference("custom_splash_logo")?.onPreferenceChangeListener = this
             findPreference("save_log")?.summary =
                 context.getString(R.string.save_log_summary).format(logFile.absolutePath)
             findPreference("custom_server")?.onPreferenceClickListener = this
@@ -253,11 +246,6 @@ class SettingDialog(context: Context) : AlertDialog.Builder(context) {
                     // from bilibili
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Build.MANUFACTURER.lowercase().equals("huawei")
             var supportCustomizeTab = true
-            val supportFullSplash = try {
-                instance.splashInfoClass?.getMethod("getMode") != null
-            } catch (e: Throwable) {
-                false
-            }
             val supportMain = !isBuiltIn || !is64 || Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             var supportDrawer = instance.homeUserCenterClass != null
             var supportDrawerStyle = true
@@ -273,20 +261,12 @@ class SettingDialog(context: Context) : AlertDialog.Builder(context) {
                     supportCustomTheme = false
                 }
             }
-            val supportSplashHook = instance.brandSplashClass != null
             val supportTeenagersMode = instance.teenagersModeDialogActivityClass != null
             val supportStoryVideo = instance.storyVideoActivityClass != null
             val supportPurifyShare = instance.shareClickResultClass != null
             val supportDownloadThread = versionCode < 6630000 || versionCode >= 6900000
             if (!supportDrawer)
                 disablePreference("drawer")
-            if (!supportSplashHook) {
-                disablePreference("custom_splash")
-                disablePreference("custom_splash_logo")
-            }
-            if (!supportFullSplash) {
-                disablePreference("full_splash")
-            }
             if (!supportMusicNotificationHook) {
                 if (versionCode >= 7500300) {
                     disablePreference(
@@ -353,16 +333,6 @@ class SettingDialog(context: Context) : AlertDialog.Builder(context) {
         @Deprecated("Deprecated in Java")
         override fun onPreferenceChange(preference: Preference, newValue: Any): Boolean {
             when (preference.key) {
-                "custom_splash" -> {
-                    if (newValue as Boolean)
-                        selectImage(SPLASH_SELECTION)
-                }
-
-                "custom_splash_logo" -> {
-                    if (newValue as Boolean)
-                        selectImage(LOGO_SELECTION)
-                }
-
                 "custom_subtitle" -> {
                     if (newValue as Boolean)
                         showCustomSubtitle()
@@ -376,46 +346,10 @@ class SettingDialog(context: Context) : AlertDialog.Builder(context) {
             return true
         }
 
-        private fun selectImage(action: Int): Boolean {
-            val intent = Intent(Intent.ACTION_GET_CONTENT)
-            intent.type = "*/*"
-            intent.addCategory(Intent.CATEGORY_OPENABLE)
-
-            try {
-                startActivityForResult(Intent.createChooser(intent, "选择一张图片"), action)
-            } catch (ex: ActivityNotFoundException) {
-                Log.toast("请安装文件管理器")
-            }
-            return true
-        }
-
         @Deprecated("Deprecated in Java")
         override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
             customSubtitleDialog?.onActivityResult(requestCode, resultCode, data)
             when (requestCode) {
-                SPLASH_SELECTION, LOGO_SELECTION -> {
-                    val destFile = when (requestCode) {
-                        SPLASH_SELECTION ->
-                            File(currentContext.filesDir, SplashHook.SPLASH_IMAGE)
-
-                        LOGO_SELECTION ->
-                            File(currentContext.filesDir, SplashHook.LOGO_IMAGE)
-
-                        else -> null
-                    } ?: return
-                    val uri = data?.data
-                    if (resultCode == RESULT_CANCELED || uri == null) {
-                        destFile.delete()
-                        return
-                    }
-                    val stream = ByteArrayOutputStream()
-                    stream.flush()
-                    MediaStore.Images.Media.getBitmap(activity.contentResolver, uri)
-                        .compress(Bitmap.CompressFormat.PNG, 100, stream)
-                    val dest = FileOutputStream(destFile)
-                    stream.writeTo(dest)
-                }
-
                 PREF_EXPORT, PREF_IMPORT -> {
                     val file = File(currentContext.filesDir, "../shared_prefs/biliroaming.xml")
                     val uri = data?.data
@@ -1179,8 +1113,6 @@ class SettingDialog(context: Context) : AlertDialog.Builder(context) {
             }
         }
 
-        const val SPLASH_SELECTION = 0
-        const val LOGO_SELECTION = 1
         const val PREF_IMPORT = 2
         const val PREF_EXPORT = 3
         const val VIDEO_EXPORT = 4

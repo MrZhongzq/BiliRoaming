@@ -64,7 +64,6 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
     val generalResponseClass by Weak { mHookInfo.generalResponse from mClassLoader }
     val seasonParamsMapClass by Weak { "com.bilibili.bangumi.data.page.detail.BangumiDetailApiService\$UniformSeasonParamsMap" from mClassLoader }
     val seasonParamsClass by Weak { mHookInfo.bangumiParams.class_ from mClassLoader }
-    val brandSplashClass by Weak { "tv.danmaku.bili.ui.splash.brand.ui.BaseBrandSplashFragment" from mClassLoader }
     val urlConnectionClass by Weak { "com.bilibili.lib.okhttp.huc.OkHttpURLConnection" from mClassLoader }
     val downloadThreadListenerClass by Weak { mHookInfo.downloadThread.listener from mClassLoader }
     val downloadThreadViewHostClass by Weak { mHookInfo.downloadThread.viewHost from mClassLoader }
@@ -80,10 +79,6 @@ class BiliBiliPackage constructor(private val mClassLoader: ClassLoader, mContex
     val menuGroupItemClass by Weak { mHookInfo.settings.menuGroupItem from mClassLoader }
     val drawerLayoutClass by Weak { mHookInfo.drawer.layout from mClassLoader }
     val drawerLayoutParamsClass by Weak { mHookInfo.drawer.layoutParams from mClassLoader }
-    val splashInfoClass by Weak {
-        "tv.danmaku.bili.ui.splash.brand.BrandShowInfo" from mClassLoader
-            ?: "tv.danmaku.bili.ui.splash.brand.model.BrandShowInfo" from mClassLoader
-    }
     val commentCopyClass by Weak { mHookInfo.commentLongClick from mClassLoader }
     val commentCopyNewClass by Weak { mHookInfo.commentLongClickNew from mClassLoader }
     val comment3CopyClass by Weak { mHookInfo.comment3Copy.class_ from mClassLoader }

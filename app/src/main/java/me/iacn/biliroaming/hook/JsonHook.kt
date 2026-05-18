@@ -36,9 +36,6 @@ class JsonHook(classLoader: ClassLoader) : BaseHook(classLoader) {
             "tv.danmaku.bili.ui.main2.api.SearchDefaultWord".findClassOrNull(mClassLoader)
         val defaultKeywordClass =
             "com.bilibili.search.api.DefaultKeyword".findClassOrNull(mClassLoader)
-        val brandSplashDataClass =
-            "tv.danmaku.bili.ui.splash.brand.BrandSplashData".findClassOrNull(mClassLoader)
-                ?: "tv.danmaku.bili.ui.splash.brand.model.BrandSplashData".findClassOrNull(mClassLoader)
         val eventEntranceClass =
             "tv.danmaku.bili.ui.main.event.model.EventEntranceModel".findClassOrNull(mClassLoader)
         val searchRanksClass = "com.bilibili.search.api.SearchRanks".findClassOrNull(mClassLoader)
@@ -302,12 +299,6 @@ class JsonHook(classLoader: ClassLoader) : BaseHook(classLoader) {
                             }
                         })
                     }
-                }
-                brandSplashDataClass -> if (sPrefs.getBoolean("custom_splash", false) ||
-                    sPrefs.getBoolean("custom_splash_logo", false)
-                ) {
-                    result.getObjectFieldOrNullAs<MutableList<Any>>("brandList")?.clear()
-                    result.getObjectFieldOrNullAs<MutableList<Any>>("showList")?.clear()
                 }
                 eventEntranceClass -> if (sPrefs.getBoolean("purify_game", false) &&
                     sPrefs.getBoolean("hidden", false)
