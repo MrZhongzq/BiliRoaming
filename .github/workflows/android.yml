@@ -55,7 +55,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: snapshot.zip
+          name: snapshot
           path: |
               app/build/outputs/apk
               app/build/outputs/mapping
